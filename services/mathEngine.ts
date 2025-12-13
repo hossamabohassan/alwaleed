@@ -11,6 +11,16 @@ function shuffleArray(array: number[]) {
   }
 }
 
+// Helper to format text for Audio/TTS to ensure consistency
+export function getQuestionAudioText(q: Question): string {
+    return q.text
+        .replace('؟', 'كم يساوي')
+        .replace('×', 'ضرب')
+        .replace('÷', 'قسمة')
+        .replace('+', 'زائد')
+        .replace('-', 'ناقص');
+}
+
 export function generateQuestion(operation: Operation, difficulty: Difficulty): Question {
   let a = 0, b = 0, answer = 0;
   let symbol = '';

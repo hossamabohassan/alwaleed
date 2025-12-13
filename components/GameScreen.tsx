@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GameState, Question, LEVELS } from '../types';
 import { audioService } from '../services/audioService';
+import { getQuestionAudioText } from '../services/mathEngine';
 import { Users, Phone, Star, Music2, BarChart3, User, XCircle } from 'lucide-react';
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
   question: Question;
   onAnswer: (ans: number) => void;
   onUseLifeline: (type: 'fiftyFifty' | 'askAudience' | 'callFriend') => void;
+  onCorrectAnswer?: () => void; // Trigger for background loading
 }
 
 interface LifelineModalProps {
@@ -66,17 +68,60 @@ const LifelineModal: React.FC<LifelineModalProps> = ({ type, data, onClose }) =>
     );
 };
 
-const CelebrationOverlay = () => (
+// --- Sticker Component ---
+const Sticker = ({ index }: { index: number }) => {
+    // Assuming the grid is 3 columns by 5 rows (15 stickers total)
+    const cols = 3;
+    const rows = 5;
+    
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    
+    // Calculate percentages for background position
+    const xPos = (col / (cols - 1)) * 100;
+    const yPos = (row / (rows - 1)) * 100;
+
+    return (
+        <div className="relative w-64 h-64 md:w-80 md:h-80 bg-white rounded-full border-8 border-yellow-400 shadow-[0_0_60px_rgba(255,215,0,0.6)] overflow-hidden animate-zoomInUp transform hover:scale-110 transition-transform duration-500 mx-auto mt-4">
+             <div 
+                className="w-full h-full"
+                style={{
+                    backgroundImage: 'url(stickers.jpg)', // Must match file name in public folder
+                    backgroundSize: `${cols * 100}% ${rows * 100}%`,
+                    backgroundPosition: `${xPos}% ${yPos}%`,
+                    backgroundRepeat: 'no-repeat'
+                }}
+             />
+             {/* Shine Effect */}
+             <div className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent rounded-full pointer-events-none"></div>
+        </div>
+    );
+};
+
+const CelebrationOverlay = ({ stickerIndex }: { stickerIndex: number | null }) => (
     <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center overflow-hidden">
         {/* Semi-transparent background to pop the text */}
-        <div className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-fadeIn"></div>
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fadeIn"></div>
 
-        {/* Big Name Splash */}
-        <div className="relative z-10 text-center animate-zoomInUp transform hover:scale-110 transition-transform duration-500">
-            <h1 className="text-[120px] md:text-[180px] leading-tight font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 via-orange-400 to-red-600 drop-shadow-[0_10px_0_rgba(255,255,255,0.2)] transform -rotate-6">
-                الوليد
-            </h1>
-            <div className="text-6xl md:text-8xl animate-bounce mt-4 drop-shadow-lg">⭐ بطل ⭐</div>
+        {/* Content Container */}
+        <div className="relative z-10 flex flex-col items-center justify-center">
+            
+            {/* Sticker appears first/central */}
+            {stickerIndex !== null && (
+                <div className="mb-6 z-20">
+                    <Sticker index={stickerIndex} />
+                </div>
+            )}
+
+            {/* Big Name Splash */}
+            <div className="text-center animate-zoomInUp transition-transform duration-500" style={{animationDelay: '0.2s'}}>
+                <h1 className="text-8xl md:text-[140px] leading-tight font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 via-orange-400 to-red-600 drop-shadow-[0_10px_0_rgba(255,255,255,0.2)] transform -rotate-6">
+                    الوليد
+                </h1>
+                <div className="text-5xl md:text-7xl animate-bounce mt-2 drop-shadow-lg text-yellow-300 font-black stroke-black">
+                     ⭐ بطل ⭐
+                </div>
+            </div>
         </div>
 
         {/* Floating Balloons */}
@@ -95,12 +140,13 @@ const CelebrationOverlay = () => (
     </div>
 );
 
-const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifeline }) => {
+const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifeline, onCorrectAnswer }) => {
   const [selectedAns, setSelectedAns] = useState<number | null>(null);
   const [answerStatus, setAnswerStatus] = useState<'correct' | 'wrong' | null>(null);
   const [hiddenAnswers, setHiddenAnswers] = useState<number[]>([]);
   const [showCelebration, setShowCelebration] = useState(false);
   const [activeLifelineModal, setActiveLifelineModal] = useState<{type: 'audience' | 'friend', data: any} | null>(null);
+  const [stickerIndex, setStickerIndex] = useState<number | null>(null);
 
   // Initialize music and question reading
   useEffect(() => {
@@ -108,6 +154,7 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     setAnswerStatus(null);
     setHiddenAnswers([]);
     setShowCelebration(false);
+    setStickerIndex(null);
     setActiveLifelineModal(null);
     
     // Stop any previous music and start suspense loop
@@ -115,7 +162,8 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     
     // Read question with slight delay to let music start
     const timer = setTimeout(() => {
-        const qText = question.text.replace('؟', 'كم يساوي').replace('×', 'ضرب').replace('÷', 'قسمة').replace('+', 'زائد').replace('-', 'ناقص');
+        // Use the consistent formatting helper
+        const qText = getQuestionAudioText(question);
         audioService.speak(qText);
     }, 1000);
     
@@ -133,7 +181,12 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     
     if (ans === question.correctAnswer) {
       setAnswerStatus('correct');
-      setShowCelebration(true); // Trigger celebration UI
+      // Trigger background loading of next question IMMEDIATELY
+      if (onCorrectAnswer) onCorrectAnswer();
+
+      // Random sticker index from 0 to 14
+      setStickerIndex(Math.floor(Math.random() * 15));
+      setShowCelebration(true); 
       
       // Play Celebration Music and Voice
       audioService.playCelebrationMusic();
@@ -141,7 +194,7 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
       
       setTimeout(() => {
         onAnswer(ans);
-      }, 5000); // 5 seconds to enjoy the music
+      }, 5000); // 5 seconds to enjoy the music and sticker
     } else {
       setAnswerStatus('wrong');
       audioService.playWrongSound();
@@ -193,7 +246,7 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
   return (
     <div className="flex flex-col h-screen max-w-7xl mx-auto p-4 md:flex-row gap-6">
       
-      {showCelebration && <CelebrationOverlay />}
+      {showCelebration && <CelebrationOverlay stickerIndex={stickerIndex} />}
       
       {activeLifelineModal && (
           <LifelineModal 
