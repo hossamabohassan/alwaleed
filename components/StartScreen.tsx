@@ -43,25 +43,44 @@ const StartScreen: React.FC<Props> = ({ onStart, onOpenGenerator }) => {
   const [randomImageIndex, setRandomImageIndex] = useState(() => Math.floor(Math.random() * 15));
 
   useEffect(() => {
-    // Preload and play Alwaleed's intro audio
-    const playIntro = async () => {
-      // Preload the intro audio file first
-      await audioService.preload(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
+    // Initialize audio context on first user interaction
+    const initAudio = () => {
+      // Preload and play Alwaleed's intro audio
+      const playIntro = async () => {
+        // Preload the intro audio file first
+        await audioService.preload(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
+        
+        // Play intro music
+        audioService.playIntroMusic();
+        
+        // Play voice after a short delay so it mixes with music
+        setTimeout(() => {
+          audioService.speak(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
+        }, 500);
+      };
       
-      // Play intro music
-      audioService.playIntroMusic();
-      
-      // Play voice after a short delay so it mixes with music
-      setTimeout(() => {
-        audioService.speak(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
-      }, 500);
-    };
-    
-    const timer = setTimeout(() => {
       playIntro();
+    };
+
+    // Try to initialize on mount (may fail due to autoplay policy)
+    const timer = setTimeout(() => {
+      initAudio();
     }, 300);
+
+    // Also initialize on first user interaction
+    const handleInteraction = () => {
+      initAudio();
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('touchstart', handleInteraction);
+    };
+    document.addEventListener('click', handleInteraction);
+    document.addEventListener('touchstart', handleInteraction);
     
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('touchstart', handleInteraction);
+    };
   }, []);
 
   const handleStart = () => {

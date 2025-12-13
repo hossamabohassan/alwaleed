@@ -130,8 +130,11 @@ class AudioService {
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
     }
+    // Resume if suspended (required by browser autoplay policy)
     if (this.audioContext?.state === 'suspended') {
-      this.audioContext.resume();
+      this.audioContext.resume().catch(err => {
+        console.warn('AudioContext resume failed:', err);
+      });
     }
   }
 
