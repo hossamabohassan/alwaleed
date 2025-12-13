@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { GameState, Question, LEVELS } from '../types';
 import { audioService } from '../services/audioService';
 import { getQuestionAudioText } from '../services/mathEngine';
-import { Users, Phone, Star, Music2, BarChart3, User, XCircle } from 'lucide-react';
+import { Users, Phone, Star, User, XCircle } from 'lucide-react';
 
 interface Props {
   gameState: GameState;
@@ -160,12 +160,11 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     // Stop any previous music and start suspense loop
     audioService.startSuspenseMusic();
     
-    // Read question with slight delay to let music start
+    // REDUCED DELAY: from 1000ms to 300ms because we are preloading audio now
     const timer = setTimeout(() => {
-        // Use the consistent formatting helper
         const qText = getQuestionAudioText(question);
         audioService.speak(qText);
-    }, 1000);
+    }, 300);
     
     return () => {
         clearTimeout(timer);
@@ -181,20 +180,17 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     
     if (ans === question.correctAnswer) {
       setAnswerStatus('correct');
-      // Trigger background loading of next question IMMEDIATELY
       if (onCorrectAnswer) onCorrectAnswer();
 
-      // Random sticker index from 0 to 14
       setStickerIndex(Math.floor(Math.random() * 15));
       setShowCelebration(true); 
       
-      // Play Celebration Music and Voice
       audioService.playCelebrationMusic();
       audioService.encourageAlwaleed(true);
       
       setTimeout(() => {
         onAnswer(ans);
-      }, 5000); // 5 seconds to enjoy the music and sticker
+      }, 5000); 
     } else {
       setAnswerStatus('wrong');
       audioService.playWrongSound();
@@ -217,18 +213,16 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
       onUseLifeline('askAudience');
       audioService.playDing();
       
-      // Simulate audience data
       const data = question.answers.map((ans, idx) => {
           let percentage = 0;
           if (ans === question.correctAnswer) {
-              percentage = Math.floor(Math.random() * (90 - 60) + 60); // 60-90% correct
+              percentage = Math.floor(Math.random() * (90 - 60) + 60);
           } else {
               percentage = Math.floor(Math.random() * 15);
           }
           return { label: ['أ', 'ب', 'ج', 'د'][idx], percentage, ans };
       });
       
-      // Normalize to 100% (roughly)
       const total = data.reduce((acc, curr) => acc + curr.percentage, 0);
       data.forEach(d => d.percentage = Math.floor((d.percentage / total) * 100));
       
@@ -238,7 +232,6 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
   const handleCallFriend = () => {
       onUseLifeline('callFriend');
       audioService.playDing();
-      // Friend gives correct answer usually
       const friendAns = Math.random() > 0.1 ? question.correctAnswer : question.answers.find(a => a !== question.correctAnswer);
       setActiveLifelineModal({ type: 'friend', data: { answer: friendAns }});
   };

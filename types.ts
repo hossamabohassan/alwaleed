@@ -18,7 +18,7 @@ export interface Question {
 export interface GameState {
   status: 'start' | 'playing' | 'won' | 'lost';
   score: number;
-  currentLevel: number; // 0 to 14 (15 questions like Millionaire)
+  currentLevel: number; // 0 to 14
   lifelines: {
     fiftyFifty: boolean;
     askAudience: boolean;
@@ -26,6 +26,7 @@ export interface GameState {
   };
   selectedOperation: Operation | null;
   selectedDifficulty: Difficulty | null;
+  selectedTable: number | null; // New field: 2-9 or null for mixed
 }
 
 export const LEVELS = [

@@ -244,7 +244,9 @@ class AudioService {
                   },
               });
 
+              // FIX: Robust check for data presence
               const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+              
               if (base64Audio) {
                   if (!this.audioContext) this.initAudioContext();
                   const audioBuffer = await this.decodeAudioData(
@@ -254,9 +256,12 @@ class AudioService {
                       1
                   );
                   this.audioCache.set(cacheKey, audioBuffer);
+              } else {
+                  console.warn("Preload warning: No audio data returned from Gemini for text:", text);
+                  // Do not throw, just finish silently, speakFallback will pick it up later
               }
           } catch (e) {
-              console.error("Preload failed", e);
+              console.error("Preload failed for:", text, e);
           } finally {
               this.pendingRequests.delete(cacheKey);
           }
@@ -287,18 +292,26 @@ class AudioService {
     
     // Check if pending
     if (this.pendingRequests.has(cacheKey)) {
-        await this.pendingRequests.get(cacheKey);
-        if (this.audioCache.has(cacheKey)) {
-            this.playAudioBuffer(this.audioCache.get(cacheKey)!);
-            return;
+        try {
+            await this.pendingRequests.get(cacheKey);
+            if (this.audioCache.has(cacheKey)) {
+                this.playAudioBuffer(this.audioCache.get(cacheKey)!);
+                return;
+            }
+        } catch(e) {
+            console.warn("Pending audio request failed, falling back.");
         }
     }
 
-    // If not cached or pending, fetch now
-    await this.preload(text, lang);
-    if (this.audioCache.has(cacheKey)) {
-        this.playAudioBuffer(this.audioCache.get(cacheKey)!);
-    } else {
+    // If not cached or pending, fetch now (Fallback if fails immediately)
+    try {
+        await this.preload(text, lang);
+        if (this.audioCache.has(cacheKey)) {
+            this.playAudioBuffer(this.audioCache.get(cacheKey)!);
+        } else {
+            this.speakFallback(text, lang);
+        }
+    } catch(e) {
         this.speakFallback(text, lang);
     }
   }

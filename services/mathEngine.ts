@@ -11,7 +11,7 @@ function shuffleArray(array: number[]) {
   }
 }
 
-// Helper to format text for Audio/TTS to ensure consistency
+// Helper to format text for Audio/TTS
 export function getQuestionAudioText(q: Question): string {
     return q.text
         .replace('؟', 'كم يساوي')
@@ -21,48 +21,71 @@ export function getQuestionAudioText(q: Question): string {
         .replace('-', 'ناقص');
 }
 
-export function generateQuestion(operation: Operation, difficulty: Difficulty): Question {
+export function generateQuestion(operation: Operation, difficulty: Difficulty, selectedTable: number | null = null): Question {
   let a = 0, b = 0, answer = 0;
   let symbol = '';
   let isMissingOperand = false;
 
-  // 30% chance of missing operand format for Medium/Hard
-  if (difficulty !== Difficulty.EASY && Math.random() > 0.7) {
+  // Reduce chance of missing operand to 20% only for Medium/Hard mixed games
+  if (!selectedTable && difficulty !== Difficulty.EASY && Math.random() > 0.8) {
     isMissingOperand = true;
   }
 
   switch (operation) {
     case 'multiplication':
       symbol = '×';
-      if (difficulty === Difficulty.EASY) {
-        a = getRandomInt(2, 5);
-        b = getRandomInt(2, 5);
-      } else if (difficulty === Difficulty.MEDIUM) {
-        a = getRandomInt(3, 9);
-        b = getRandomInt(3, 9);
+      if (selectedTable) {
+          // Specific Table Logic (e.g. Table 5)
+          // Always use the selected table as one operand
+          const otherOperand = getRandomInt(1, 10); // 2x1 to 2x10
+          if (Math.random() > 0.5) {
+              a = selectedTable;
+              b = otherOperand;
+          } else {
+              a = otherOperand;
+              b = selectedTable;
+          }
       } else {
-        a = getRandomInt(6, 12);
-        b = getRandomInt(4, 9);
+          // Classic Difficulty Logic
+          if (difficulty === Difficulty.EASY) {
+            a = getRandomInt(2, 5);
+            b = getRandomInt(2, 5);
+          } else if (difficulty === Difficulty.MEDIUM) {
+            a = getRandomInt(3, 9);
+            b = getRandomInt(3, 9);
+          } else {
+            a = getRandomInt(6, 12);
+            b = getRandomInt(4, 9);
+          }
       }
       answer = a * b;
       break;
 
     case 'division':
       symbol = '÷';
-      let divA = 0, divB = 0;
-      if (difficulty === Difficulty.EASY) {
-        divA = getRandomInt(2, 5);
-        divB = getRandomInt(2, 5);
-      } else if (difficulty === Difficulty.MEDIUM) {
-        divA = getRandomInt(3, 9);
-        divB = getRandomInt(3, 9);
+      if (selectedTable) {
+          // Division Table Logic (e.g. Table 2 means dividing by 2)
+          // Logic: (Table * Random) / Table = Random
+          const multiplier = getRandomInt(1, 10);
+          b = selectedTable; // Divisor is the table number
+          a = b * multiplier; // Dividend
+          answer = multiplier;
       } else {
-        divA = getRandomInt(4, 9);
-        divB = getRandomInt(6, 12);
+          let divA = 0, divB = 0;
+          if (difficulty === Difficulty.EASY) {
+            divA = getRandomInt(2, 5);
+            divB = getRandomInt(2, 5);
+          } else if (difficulty === Difficulty.MEDIUM) {
+            divA = getRandomInt(3, 9);
+            divB = getRandomInt(3, 9);
+          } else {
+            divA = getRandomInt(4, 9);
+            divB = getRandomInt(6, 12);
+          }
+          answer = divA; 
+          b = divB;
+          a = divA * divB; 
       }
-      answer = divA; 
-      b = divB;
-      a = divA * divB; 
       break;
 
     case 'addition':
@@ -100,7 +123,7 @@ export function generateQuestion(operation: Operation, difficulty: Difficulty): 
   answers.add(answer);
 
   while (answers.size < 4) {
-    const offset = getRandomInt(1, 10);
+    const offset = getRandomInt(1, 5);
     const sign = Math.random() > 0.5 ? 1 : -1;
     let fake = answer + (offset * sign);
     if (fake < 0) fake = Math.abs(fake);
@@ -113,19 +136,9 @@ export function generateQuestion(operation: Operation, difficulty: Difficulty): 
 
   if (isMissingOperand) {
     const hideA = Math.random() > 0.5;
-    if (operation === 'division') {
-         if (hideA) {
-             return generateSpecificMissingQuestion(a, [], b, answer, symbol, true);
-         } else {
-             return generateSpecificMissingQuestion(b, [], a, answer, symbol, false);
-         }
-    } else {
-        if (hideA) {
-             return generateSpecificMissingQuestion(a, [], b, answer, symbol, true);
-        } else {
-             return generateSpecificMissingQuestion(b, [], a, answer, symbol, false);
-        }
-    }
+    // For specific tables, usually keep it simple "a x b = ?", but we can support missing if desired
+    // For now, if selectedTable is active, we disabled missingOperand above to keep it focused on the table memorization
+    return generateSpecificMissingQuestion(a, [], b, answer, symbol, true); 
   }
 
   const text = `${a} ${symbol} ${b} = ؟`;
@@ -179,36 +192,15 @@ function generateSpecificMissingQuestion(
     };
 }
 
-// New Helper Function for Educational Hints
 export function getEducationalHint(q: Question): string {
     const isMult = q.text.includes('×');
     const isDiv = q.text.includes('÷');
-    const isAdd = q.text.includes('+');
-    const isSub = q.text.includes('-');
-
-    if (q.isMissingOperand) {
-        // Simple generic hint for missing operands as parsing specific numbers back from text is complex without storing more state
-        // We can infer operations though.
-        if (isMult) return `تذكر يا الوليد: (رقم) × (رقم) = الناتج. ما هو الرقم الذي إذا ضربناه يعطينا هذه النتيجة؟`;
-        if (isDiv) return `تذكر: القسمة عكس الضرب. حاول تجد الرقم المفقود بالتجربة!`;
-        return `في المسائل المجهولة، حاول تخمين الرقم وجربه في المعادلة لترى إن كان صحيحاً.`;
-    }
 
     if (isMult) {
-        // Extract numbers approximately or give generic logic
-        return `يا بطل، الضرب هو تكرار للجمع. ${q.operandA} × ${q.operandB} تعني أن نجمع الرقم ${q.operandA}، ${q.operandB} مرات.`;
+        return `الضرب في ${q.operandA} أو ${q.operandB} يعني تكرار الجمع. حاول العد بالقفز!`;
     }
     if (isDiv) {
-        // Note: Logic above sets answer=divA, b=divB, a=divA*divB. 
-        // Display is "a / b = answer" -> "a / b = ?"
-        // q.operandA is Dividend (big number), q.operandB is Divisor.
-        return `القسمة تعني التوزيع بالتساوي. لو وزعنا ${q.operandA} على ${q.operandB} أشخاص، كل واحد يأخذ ${q.correctAnswer}.`;
+        return `القسمة على ${q.operandB} تعني: كم ${q.operandB} موجودة في الرقم ${q.operandA}؟`;
     }
-    if (isAdd) {
-        return `الجمع يعني نضم الأرقام لبعضها. ${q.operandA} ونضيف عليها ${q.operandB} يصبح المجموع ${q.correctAnswer}.`;
-    }
-    if (isSub) {
-        return `الطرح يعني الأخذ أو النقصان. ${q.operandA} لو أخذنا منها ${q.operandB} يتبقى ${q.correctAnswer}.`;
-    }
-    return "حاول مرة أخرى، أنت ذكي وتستطيع حلها!";
+    return "حاول مرة أخرى!";
 }
