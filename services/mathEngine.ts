@@ -21,6 +21,20 @@ export function getQuestionAudioText(q: Question): string {
         .replace('-', 'ناقص');
 }
 
+// Helper to generate a consistent filename for a question (e.g., 2 x 5 -> math_mul_2_5.mp3)
+export function getQuestionFileName(q: Question): string | null {
+    if (q.text.includes('×')) {
+        return `math_mul_${q.operandA}_${q.operandB}.mp3`;
+    }
+    if (q.text.includes('÷')) {
+        // q.text is usually "A ÷ B = ?". 
+        // Note: In our generation logic, operandA is the dividend (big number), operandB is the divisor.
+        return `math_div_${q.operandA}_${q.operandB}.mp3`;
+    }
+    // We don't pre-generate addition/subtraction as they are infinite
+    return null;
+}
+
 export function generateQuestion(operation: Operation, difficulty: Difficulty, selectedTable: number | null = null): Question {
   let a = 0, b = 0, answer = 0;
   let symbol = '';
@@ -195,6 +209,8 @@ function generateSpecificMissingQuestion(
 export function getEducationalHint(q: Question): string {
     const isMult = q.text.includes('×');
     const isDiv = q.text.includes('÷');
+    const isAdd = q.text.includes('+');
+    const isSub = q.text.includes('-');
 
     if (isMult) {
         return `الضرب في ${q.operandA} أو ${q.operandB} يعني تكرار الجمع. حاول العد بالقفز!`;
@@ -202,5 +218,141 @@ export function getEducationalHint(q: Question): string {
     if (isDiv) {
         return `القسمة على ${q.operandB} تعني: كم ${q.operandB} موجودة في الرقم ${q.operandA}؟`;
     }
+    if (isAdd) {
+        return `الجمع يعني إضافة الأرقام معاً. اجمع ${q.operandA} + ${q.operandB} = ؟`;
+    }
+    if (isSub) {
+        return `الطرح يعني أخذ عدد من عدد آخر. اطرح ${q.operandA} - ${q.operandB} = ؟`;
+    }
     return "حاول مرة أخرى!";
+}
+
+export interface EducationalExplanation {
+    title: string;
+    explanation: string;
+    visualExample: string[];
+    steps: string[];
+    emoji: string;
+}
+
+export function getInteractiveExplanation(q: Question): EducationalExplanation {
+    const isMult = q.text.includes('×');
+    const isDiv = q.text.includes('÷');
+    const isAdd = q.text.includes('+');
+    const isSub = q.text.includes('-');
+
+    if (isMult) {
+        const visual: string[] = [];
+        // Show groups
+        for (let i = 0; i < q.operandB; i++) {
+            const apples = '🍎'.repeat(Math.min(q.operandA, 10)); // Limit to 10 for display
+            visual.push(`المجموعة ${i + 1}: ${apples}${q.operandA > 10 ? ` (${q.operandA} تفاحات)` : ''}`);
+        }
+        // Add total
+        visual.push(`━━━━━━━━━━━━━━━━━━━━`);
+        visual.push(`المجموع: ${'🍎'.repeat(Math.min(q.correctAnswer, 30))}${q.correctAnswer > 30 ? ` (${q.correctAnswer} تفاحة)` : ''}`);
+        
+        return {
+            title: "تعلم الضرب 🎯",
+            explanation: `الضرب يعني تكرار الجمع! ${q.operandA} × ${q.operandB} يعني جمع ${q.operandA} عدد ${q.operandB} مرات`,
+            visualExample: visual,
+            steps: [
+                `خذ ${q.operandA} تفاحة (هذه مجموعة واحدة)`,
+                `كرر هذه المجموعة ${q.operandB} مرات`,
+                `عد كل التفاحات: ${q.operandA} + ${q.operandA} + ... (${q.operandB} مرات)`,
+                `النتيجة = ${q.correctAnswer} تفاحة`
+            ],
+            emoji: "🍎"
+        };
+    }
+    
+    if (isDiv) {
+        const groups = q.correctAnswer;
+        const visual: string[] = [];
+        visual.push(`كل التفاحات: ${'🍎'.repeat(Math.min(q.operandA, 20))}${q.operandA > 20 ? ` (${q.operandA} تفاحة)` : ''}`);
+        visual.push(`━━━━━━━━━━━━━━━━━━━━`);
+        visual.push(`نقسمها إلى مجموعات (كل مجموعة ${q.operandB} تفاحات):`);
+        for (let i = 0; i < Math.min(groups, 5); i++) {
+            const apples = '🍎'.repeat(Math.min(q.operandB, 10));
+            visual.push(`المجموعة ${i + 1}: ${apples}`);
+        }
+        if (groups > 5) {
+            visual.push(`... و ${groups - 5} مجموعات أخرى`);
+        }
+        visual.push(`━━━━━━━━━━━━━━━━━━━━`);
+        visual.push(`النتيجة: ${groups} مجموعات`);
+        
+        return {
+            title: "تعلم القسمة 🎯",
+            explanation: `القسمة تعني: كم مجموعة من ${q.operandB} يمكن أن نصنعها من ${q.operandA}؟`,
+            visualExample: visual,
+            steps: [
+                `لدينا ${q.operandA} تفاحة`,
+                `نريد تجميعها في مجموعات، كل مجموعة ${q.operandB} تفاحات`,
+                `نقسم التفاحات: ${q.operandA} ÷ ${q.operandB}`,
+                `النتيجة = ${q.correctAnswer} مجموعات`
+            ],
+            emoji: "🍎"
+        };
+    }
+    
+    if (isAdd) {
+        const total = q.correctAnswer;
+        const maxDisplay = 15;
+        const showA = Math.min(q.operandA, maxDisplay);
+        const showB = Math.min(q.operandB, maxDisplay);
+        const showTotal = Math.min(total, maxDisplay * 2);
+        
+        return {
+            title: "تعلم الجمع 🎯",
+            explanation: `الجمع يعني إضافة الأرقام معاً! ${q.operandA} + ${q.operandB} = ؟`,
+            visualExample: [
+                `المجموعة الأولى: ${'🍎'.repeat(showA)}${q.operandA > maxDisplay ? ` (${q.operandA} تفاحات)` : ''}`,
+                `+`,
+                `المجموعة الثانية: ${'🍎'.repeat(showB)}${q.operandB > maxDisplay ? ` (${q.operandB} تفاحات)` : ''}`,
+                `━━━━━━━━━━━━━━━━━━━━`,
+                `المجموع: ${'🍎'.repeat(showTotal)}${total > showTotal ? ` (${total} تفاحة)` : ''}`
+            ],
+            steps: [
+                `ابدأ بالرقم ${q.operandA} (المجموعة الأولى)`,
+                `أضف إليه ${q.operandB} (المجموعة الثانية)`,
+                `عد كل التفاحات معاً`,
+                `النتيجة = ${q.correctAnswer} تفاحة`
+            ],
+            emoji: "🍎"
+        };
+    }
+    
+    if (isSub) {
+        const maxDisplay = 15;
+        const showA = Math.min(q.operandA, maxDisplay);
+        const showB = Math.min(q.operandB, maxDisplay);
+        const showResult = Math.min(q.correctAnswer, maxDisplay);
+        
+        return {
+            title: "تعلم الطرح 🎯",
+            explanation: `الطرح يعني أخذ عدد من عدد آخر! ${q.operandA} - ${q.operandB} = ؟`,
+            visualExample: [
+                `في البداية: ${'🍎'.repeat(showA)}${q.operandA > maxDisplay ? ` (${q.operandA} تفاحات)` : ''}`,
+                `نأخذ منها: ${'❌'.repeat(showB)}${q.operandB > maxDisplay ? ` (${q.operandB} تفاحات)` : ''}`,
+                `━━━━━━━━━━━━━━━━━━━━`,
+                `ما تبقى: ${'🍎'.repeat(showResult)}${q.correctAnswer > maxDisplay ? ` (${q.correctAnswer} تفاحة)` : ''}`
+            ],
+            steps: [
+                `ابدأ بـ ${q.operandA} تفاحة`,
+                `خذ منها ${q.operandB} تفاحة (احذفها)`,
+                `عد ما تبقى من التفاحات`,
+                `النتيجة = ${q.correctAnswer} تفاحة`
+            ],
+            emoji: "🍎"
+        };
+    }
+    
+    return {
+        title: "تعلم الرياضيات 🎯",
+        explanation: "حاول حل المسألة خطوة بخطوة!",
+        visualExample: [],
+        steps: ["فكر جيداً", "حاول مرة أخرى"],
+        emoji: "🤔"
+    };
 }

@@ -1,21 +1,66 @@
 import React, { useEffect, useState } from 'react';
 import { Difficulty, Operation } from '../types';
-import { Divide, X, Plus, Minus, Play, Sparkles, Grid3X3 } from 'lucide-react';
-import { audioService } from '../services/audioService';
+import { Divide, X, Plus, Minus, Play, Sparkles, Grid3X3, Settings } from 'lucide-react';
+import { audioService, PHRASES } from '../services/audioService';
+
+// --- Alwaleed Grid Image Component (Same as Sticker) ---
+const AlwaleedGridImage = ({ index }: { index: number }) => {
+    // Assuming the grid is 3 columns by 5 rows (15 images total)
+    const cols = 3;
+    const rows = 5;
+    
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    
+    // Calculate percentages for background position
+    const xPos = (col / (cols - 1)) * 100;
+    const yPos = (row / (rows - 1)) * 100;
+
+    return (
+        <div 
+            className="w-full h-full"
+            style={{
+                backgroundImage: 'url(stickers.jpg)', // Must match file name in public folder
+                backgroundSize: `${cols * 100}% ${rows * 100}%`,
+                backgroundPosition: `${xPos}% ${yPos}%`,
+                backgroundRepeat: 'no-repeat'
+            }}
+        />
+    );
+};
 
 interface Props {
   onStart: (op: Operation, diff: Difficulty, table: number | null) => void;
+  onOpenGenerator: () => void; // New Prop
 }
 
-const StartScreen: React.FC<Props> = ({ onStart }) => {
+const StartScreen: React.FC<Props> = ({ onStart, onOpenGenerator }) => {
   const [selectedOp, setSelectedOp] = useState<Operation>('multiplication');
   const [selectedDiff, setSelectedDiff] = useState<Difficulty>(Difficulty.MEDIUM);
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
+  
+  // Random image from grid (same as stickers - 3 cols × 5 rows = 15 images)
+  const [randomImageIndex, setRandomImageIndex] = useState(() => Math.floor(Math.random() * 15));
 
   useEffect(() => {
+    // Preload and play Alwaleed's intro audio
+    const playIntro = async () => {
+      // Preload the intro audio file first
+      await audioService.preload(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
+      
+      // Play intro music
+      audioService.playIntroMusic();
+      
+      // Play voice after a short delay so it mixes with music
+      setTimeout(() => {
+        audioService.speak(PHRASES.ALWALEED_WELCOME, 'ar-SA', 'intro_alwaleed.mp3');
+      }, 500);
+    };
+    
     const timer = setTimeout(() => {
-        audioService.playIntroMusic();
-    }, 500);
+      playIntro();
+    }, 300);
+    
     return () => clearTimeout(timer);
   }, []);
 
@@ -29,11 +74,23 @@ const StartScreen: React.FC<Props> = ({ onStart }) => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center space-y-4 animate-fadeIn relative z-10">
       
-      {/* Logo Area */}
-      <div className="relative group cursor-default animate-float">
+      {/* Settings Button (Hidden access for generator) */}
+      <button 
+        onClick={onOpenGenerator}
+        className="absolute top-4 left-4 text-indigo-400 hover:text-white transition-colors opacity-50 hover:opacity-100"
+        title="إعدادات الصوت"
+      >
+          <Settings size={24} />
+      </button>
+
+      {/* Image / Logo Area - Random from Grid */}
+      <div className="relative group cursor-default animate-float mb-4">
         <div className="absolute -inset-4 bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500 rounded-full blur opacity-60 animate-pulse"></div>
-        <div className="relative bg-white rounded-full p-4 md:p-6 border-8 border-yellow-400 shadow-2xl">
-           <span className="text-5xl md:text-6xl filter drop-shadow-lg">💰</span>
+        <div className="relative w-40 h-40 md:w-56 md:h-56 rounded-full border-8 border-yellow-400 shadow-2xl overflow-hidden bg-white">
+          {/* Grid Image Component */}
+          <AlwaleedGridImage index={randomImageIndex} />
+          {/* Shine Effect */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent rounded-full pointer-events-none"></div>
         </div>
       </div>
       
@@ -41,12 +98,14 @@ const StartScreen: React.FC<Props> = ({ onStart }) => {
         <h1 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-100 to-yellow-500 mb-2 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">
           الوليد المليونير
         </h1>
-        <p className="text-yellow-200 text-lg md:text-2xl font-bold drop-shadow-md">
-          جدول الضرب والقسمة للأذكياء
+        <p className="text-indigo-200 text-lg md:text-2xl font-bold drop-shadow-md flex items-center justify-center gap-2">
+          <Sparkles className="text-yellow-400 animate-spin-slow" />
+          مرحباً يا الوليد، جاهز نلعب ونتعلم؟
+          <Sparkles className="text-yellow-400 animate-spin-slow" />
         </p>
       </div>
 
-      <div className="w-full max-w-2xl bg-white/10 backdrop-blur-xl rounded-3xl p-6 border-2 border-yellow-500/50 shadow-2xl relative overflow-hidden">
+      <div className="w-full max-w-2xl bg-white/10 backdrop-blur-xl rounded-3xl p-6 border-2 border-yellow-500/50 shadow-2xl relative overflow-hidden mt-4">
         
         {/* Operation Selection */}
         <div className="mb-6">

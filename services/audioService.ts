@@ -1,5 +1,28 @@
 import { GoogleGenAI } from "@google/genai";
 
+// --- Exported Constants for Static Generation ---
+export const PHRASES = {
+    EN_CELEBRATION: [
+        "Great Alwaleed!",
+        "Bravo Alwaleed!",
+        "Excellent work!",
+        "You are amazing Alwaleed!"
+    ],
+    AR_CELEBRATION: [
+        "الله عليك يا الوليد!",
+        "شاطر يا بطل!",
+        "ممتاز يا عبقري!",
+        "إجابة روعة يا مليونير!"
+    ],
+    AR_WRONG: [
+        "ولا يهمك يا الوليد، فكر تاني",
+        "قريب جداً، تعال نشوف الحل الصح",
+        "حاول مرة تانية يا بطل"
+    ],
+    GENERIC_INTRO: "أهلاً بك يا الوليد في مسابقة العباقرة",
+    ALWALEED_WELCOME: "مرحباً يا الوليد، جاهز نلعب شوية ونتعلم الحساب؟"
+};
+
 class AudioService {
   private synth: SpeechSynthesis;
   private voices: SpeechSynthesisVoice[] = [];
@@ -8,10 +31,15 @@ class AudioService {
   private activeGainNodes: GainNode[] = [];
   private suspenseInterval: any = null;
   
-  // Cache for generated audio to save API calls and reduce latency
-  private audioCache: Map<string, AudioBuffer> = new Map();
+  // In-memory cache for current session speed
+  private memoryCache: Map<string, AudioBuffer> = new Map();
   private genAI: GoogleGenAI | null = null;
   private pendingRequests: Map<string, Promise<void>> = new Map();
+
+  // IndexedDB Configuration
+  private dbName = 'AlwaleedMathAudioDB';
+  private storeName = 'audio_store';
+  private dbPromise: Promise<IDBDatabase> | null = null;
 
   constructor() {
     this.synth = window.speechSynthesis;
@@ -21,15 +49,82 @@ class AudioService {
       };
     }
 
-    // Initialize Gemini API if key is available
+    // Initialize Gemini API (Only used for the Generator Tool, not for runtime gameplay anymore)
     try {
-      if (process.env.API_KEY) {
-        this.genAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Vite uses import.meta.env for environment variables
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.API_KEY;
+      if (apiKey) {
+        this.genAI = new GoogleGenAI({ apiKey });
       }
     } catch (e) {
-      console.warn("Gemini API Key not found or process.env not available, falling back to browser TTS");
+      console.warn("Gemini API Key not found");
     }
+
+    // Initialize Database
+    this.initDB();
   }
+
+  // --- IndexedDB Implementation ---
+  
+  private initDB() {
+      if (typeof window === 'undefined' || !window.indexedDB) return;
+      
+      this.dbPromise = new Promise((resolve, reject) => {
+          const request = window.indexedDB.open(this.dbName, 1);
+          
+          request.onerror = () => {
+              console.warn("Failed to open IndexedDB");
+              reject(request.error);
+          };
+          
+          request.onsuccess = () => {
+              resolve(request.result);
+          };
+          
+          request.onupgradeneeded = (event) => {
+              const db = (event.target as IDBOpenDBRequest).result;
+              if (!db.objectStoreNames.contains(this.storeName)) {
+                  db.createObjectStore(this.storeName);
+              }
+          };
+      });
+  }
+
+  private async getFromDiskCache(key: string): Promise<string | null> {
+      if (!this.dbPromise) return null;
+      try {
+          const db = await this.dbPromise;
+          return new Promise((resolve) => {
+              const transaction = db.transaction([this.storeName], 'readonly');
+              const store = transaction.objectStore(this.storeName);
+              const request = store.get(key);
+              
+              request.onsuccess = () => {
+                  resolve(request.result as string || null);
+              };
+              request.onerror = () => {
+                  resolve(null);
+              };
+          });
+      } catch (e) {
+          console.warn("Error reading from IDB", e);
+          return null;
+      }
+  }
+
+  private async saveToDiskCache(key: string, base64Data: string): Promise<void> {
+      if (!this.dbPromise) return;
+      try {
+          const db = await this.dbPromise;
+          const transaction = db.transaction([this.storeName], 'readwrite');
+          const store = transaction.objectStore(this.storeName);
+          store.put(base64Data, key);
+      } catch (e) {
+          console.warn("Error saving to IDB", e);
+      }
+  }
+
+  // --- Audio Context & Helpers ---
 
   private initAudioContext() {
     if (!this.audioContext) {
@@ -39,8 +134,6 @@ class AudioService {
       this.audioContext.resume();
     }
   }
-
-  // --- Helper Functions for Gemini Audio Decoding ---
 
   private decodeBase64(base64: string): Uint8Array {
     const binaryString = atob(base64);
@@ -92,7 +185,7 @@ class AudioService {
     }
   }
 
-  // --- Tone Generation (unchanged) ---
+  // --- Tone Generation ---
   private playTone(freq: number, type: OscillatorType, duration: number, startTime: number, vol: number = 0.1, decay: boolean = true) {
     if (!this.audioContext) this.initAudioContext();
     const ctx = this.audioContext!;
@@ -126,7 +219,7 @@ class AudioService {
     }, duration * 1000 + 100);
   }
 
-  // --- Melodies (unchanged) ---
+  // --- Melodies ---
   public playIntroMusic() {
     this.stopAllSounds();
     if (!this.audioContext) this.initAudioContext();
@@ -219,47 +312,113 @@ class AudioService {
     this.playTone(1760, 'sine', 0.3, now + 0.1, 0.05); 
   }
 
+  public playPhoneRing() {
+    if (!this.audioContext) this.initAudioContext();
+    const ctx = this.audioContext!;
+    const now = ctx.currentTime;
+    
+    // Phone ring uses dual-tone: typically 440Hz and 480Hz alternating
+    // We'll create a realistic phone ring pattern
+    const ringDuration = 0.4; // Each ring lasts 0.4 seconds
+    const pauseDuration = 0.2; // Pause between rings
+    const totalRings = 3; // Play 3 rings
+    
+    for (let i = 0; i < totalRings; i++) {
+      const ringStart = now + i * (ringDuration + pauseDuration);
+      
+      // Dual-tone phone ring: 440Hz and 480Hz simultaneously
+      this.playTone(440, 'sine', ringDuration, ringStart, 0.15, false);
+      this.playTone(480, 'sine', ringDuration, ringStart, 0.15, false);
+    }
+  }
+
+  public playAudienceThinking() {
+    if (!this.audioContext) this.initAudioContext();
+    const ctx = this.audioContext!;
+    const now = ctx.currentTime;
+    
+    // Create a crowd murmuring/thinking sound using multiple overlapping tones
+    // Simulate multiple people talking/thinking at different pitches
+    const baseFrequencies = [200, 250, 300, 350, 400, 450];
+    const duration = 2.0; // 2 seconds of thinking sound
+    
+    baseFrequencies.forEach((freq, idx) => {
+      // Stagger the start times slightly to create a more natural crowd effect
+      const startTime = now + (idx * 0.1);
+      // Vary the volume slightly for each voice
+      const vol = 0.08 + (Math.random() * 0.04);
+      
+      // Use noise-like waveform (sawtooth) with slight variations
+      this.playTone(freq, 'sawtooth', duration, startTime, vol, true);
+      
+      // Add some harmonics for richness
+      if (idx % 2 === 0) {
+        this.playTone(freq * 1.5, 'triangle', duration * 0.8, startTime + 0.2, vol * 0.6, true);
+      }
+    });
+    
+    // Add a low rumble for crowd atmosphere
+    this.playTone(100, 'sine', duration, now, 0.05, true);
+  }
+
   // --- High Quality Speech Implementation ---
 
+  // Check if a static file exists (User must put them in public/audio/)
+  private async checkStaticFile(filename: string): Promise<AudioBuffer | null> {
+      try {
+          const path = `./audio/${filename}`;
+          const response = await fetch(path);
+          if (!response.ok) return null;
+          
+          const arrayBuffer = await response.arrayBuffer();
+          if (!this.audioContext) this.initAudioContext();
+          return await this.audioContext!.decodeAudioData(arrayBuffer);
+      } catch (e) {
+          return null;
+      }
+  }
+
   // Preload audio without playing it
-  public async preload(text: string, lang: string = 'ar-SA'): Promise<void> {
-      if (!this.genAI) return;
-      
-      const cacheKey = `${lang}-${text}`;
-      if (this.audioCache.has(cacheKey)) return;
+  public async preload(text: string, lang: string = 'ar-SA', staticFilename?: string | null): Promise<void> {
+      const cacheKey = staticFilename || `${lang}-${text}`;
+
+      // 1. Check Memory Cache
+      if (this.memoryCache.has(cacheKey)) return;
+
+      // 2. Check Pending Requests
       if (this.pendingRequests.has(cacheKey)) return this.pendingRequests.get(cacheKey);
 
       const requestPromise = (async () => {
           try {
-              const response = await this.genAI!.models.generateContent({
-                  model: "gemini-2.5-flash-preview-tts",
-                  contents: { parts: [{ text: text }] },
-                  config: {
-                    responseModalities: ['AUDIO'] as any,
-                    speechConfig: {
-                        voiceConfig: {
-                          prebuiltVoiceConfig: { voiceName: 'Puck' },
-                        },
-                    },
-                  },
-              });
+              // 3. Try to fetch Static File (Project Assets)
+              if (staticFilename) {
+                  const staticBuffer = await this.checkStaticFile(staticFilename);
+                  if (staticBuffer) {
+                      this.memoryCache.set(cacheKey, staticBuffer);
+                      // Also map the text to this buffer so fallback logic works
+                      this.memoryCache.set(`${lang}-${text}`, staticBuffer); 
+                      return;
+                  }
+              }
 
-              // FIX: Robust check for data presence
-              const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              
-              if (base64Audio) {
-                  if (!this.audioContext) this.initAudioContext();
-                  const audioBuffer = await this.decodeAudioData(
-                      this.decodeBase64(base64Audio),
+              // 4. Check Disk Cache (IndexedDB)
+              const cachedBase64 = await this.getFromDiskCache(cacheKey);
+              if (cachedBase64) {
+                   if (!this.audioContext) this.initAudioContext();
+                   const audioBuffer = await this.decodeAudioData(
+                      this.decodeBase64(cachedBase64),
                       this.audioContext!,
                       24000,
                       1
                   );
-                  this.audioCache.set(cacheKey, audioBuffer);
-              } else {
-                  console.warn("Preload warning: No audio data returned from Gemini for text:", text);
-                  // Do not throw, just finish silently, speakFallback will pick it up later
+                  this.memoryCache.set(cacheKey, audioBuffer);
+                  return;
               }
+
+              // 5. STOP: Do not fallback to API Generation for Gameplay.
+              // If not found in file or DB, we just return. speak() will handle fallback to browser TTS.
+              console.log(`Audio not found in cache/static for: ${staticFilename || text}. Will use Browser TTS fallback.`);
+              
           } catch (e) {
               console.error("Preload failed for:", text, e);
           } finally {
@@ -271,47 +430,56 @@ class AudioService {
       return requestPromise;
   }
 
-  public async speak(text: string, lang: string = 'ar-SA') {
+  // Helper used by the Bulk Generator Tool ONLY to get raw base64 data
+  // This allows the admin to generate the files initially.
+  public async generateRawAudio(text: string): Promise<string | null> {
+      if (!this.genAI) return null;
+      try {
+          const response = await this.genAI.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: { parts: [{ text: text }] },
+            config: {
+                responseModalities: ['AUDIO'] as any,
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Puck' },
+                    },
+                },
+            },
+        });
+        return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+      } catch (e) {
+          console.error("Gen fail", e);
+          return null;
+      }
+  }
+
+  public async speak(text: string, lang: string = 'ar-SA', staticFilename?: string | null) {
     // Stop any existing browser speech
     if (this.synth.speaking) {
       this.synth.cancel();
     }
 
-    if (!this.genAI) {
-      console.log("No Gemini API key, using browser fallback.");
-      this.speakFallback(text, lang);
-      return;
+    // Try finding by filename first, then by text key
+    const cacheKey = staticFilename && this.memoryCache.has(staticFilename) 
+        ? staticFilename 
+        : `${lang}-${text}`;
+
+    // Ensure Loaded (Check DB/File only, no API)
+    // We try to preload if it's not in memory. 
+    if (!this.memoryCache.has(cacheKey)) {
+        await this.preload(text, lang, staticFilename);
     }
 
-    // Check Cache
-    const cacheKey = `${lang}-${text}`;
-    if (this.audioCache.has(cacheKey)) {
-        this.playAudioBuffer(this.audioCache.get(cacheKey)!);
-        return;
-    }
-    
-    // Check if pending
-    if (this.pendingRequests.has(cacheKey)) {
-        try {
-            await this.pendingRequests.get(cacheKey);
-            if (this.audioCache.has(cacheKey)) {
-                this.playAudioBuffer(this.audioCache.get(cacheKey)!);
-                return;
-            }
-        } catch(e) {
-            console.warn("Pending audio request failed, falling back.");
-        }
-    }
+    // Determine final key to use
+    const finalKey = this.memoryCache.has(staticFilename || '') ? staticFilename! : `${lang}-${text}`;
 
-    // If not cached or pending, fetch now (Fallback if fails immediately)
-    try {
-        await this.preload(text, lang);
-        if (this.audioCache.has(cacheKey)) {
-            this.playAudioBuffer(this.audioCache.get(cacheKey)!);
-        } else {
-            this.speakFallback(text, lang);
-        }
-    } catch(e) {
+    // Play from memory if available
+    if (this.memoryCache.has(finalKey)) {
+        this.playAudioBuffer(this.memoryCache.get(finalKey)!);
+    } else {
+        // Fallback to Browser TTS
+        console.log("Audio not available in high quality, using fallback.");
         this.speakFallback(text, lang);
     }
   }
@@ -347,27 +515,25 @@ class AudioService {
        const type = Math.random();
        
        if (type < 0.33) {
-           const enPhrases = ["Great Alwaleed!", "Bravo Alwaleed!", "Excellent work!", "You are amazing Alwaleed!"];
-           const phrase = enPhrases[Math.floor(Math.random() * enPhrases.length)];
-           this.speak(phrase, 'en-US');
+           const index = Math.floor(Math.random() * PHRASES.EN_CELEBRATION.length);
+           const text = PHRASES.EN_CELEBRATION[index];
+           const filename = `encourage_en_US_${index}.mp3`;
+           this.speak(text, 'en-US', filename);
        } else if (type < 0.66) {
-           const arPhrases = [
-             "الله عليك يا الوليد!",
-             "شاطر يا بطل!",
-             "ممتاز يا عبقري!",
-             "إجابة روعة يا مليونير!"
-           ];
-           this.speak(arPhrases[Math.floor(Math.random() * arPhrases.length)]);
+           const index = Math.floor(Math.random() * PHRASES.AR_CELEBRATION.length);
+           const text = PHRASES.AR_CELEBRATION[index];
+           const filename = `encourage_ar_SA_${index}.mp3`;
+           this.speak(text, 'ar-SA', filename);
        } else {
-           this.speak("يا الوليد، أنت مبدع حقاً");
+           const text = "يا الوليد، أنت مبدع حقاً";
+           const filename = `encourage_special_1.mp3`;
+           this.speak(text, 'ar-SA', filename);
        }
     } else {
-        const negativePhrases = [
-          "ولا يهمك يا الوليد، فكر تاني",
-          "قريب جداً، تعال نشوف الحل الصح",
-          "حاول مرة تانية يا بطل",
-        ];
-        this.speak(negativePhrases[Math.floor(Math.random() * negativePhrases.length)]);
+        const index = Math.floor(Math.random() * PHRASES.AR_WRONG.length);
+        const text = PHRASES.AR_WRONG[index];
+        const filename = `wrong_ar_SA_${index}.mp3`;
+        this.speak(text, 'ar-SA', filename);
     }
   }
 }

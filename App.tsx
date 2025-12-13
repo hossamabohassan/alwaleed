@@ -3,7 +3,8 @@ import { GameState, Operation, Difficulty, LEVELS, Question } from './types';
 import StartScreen from './components/StartScreen';
 import GameScreen from './components/GameScreen';
 import ResultModal from './components/ResultModal';
-import { generateQuestion, getQuestionAudioText } from './services/mathEngine';
+import AudioGenerator from './components/AudioGenerator';
+import { generateQuestion, getQuestionAudioText, getQuestionFileName } from './services/mathEngine';
 import { audioService } from './services/audioService';
 import { Loader2 } from 'lucide-react';
 
@@ -21,8 +22,16 @@ export default function App() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [showGenerator, setShowGenerator] = useState(false);
 
   const questionBuffer = useRef<Question[]>([]);
+
+  // Helper to load audio with filename fallback
+  const loadAudioForQuestion = async (q: Question) => {
+      const text = getQuestionAudioText(q);
+      const filename = getQuestionFileName(q);
+      await audioService.preload(text, 'ar-SA', filename);
+  };
 
   const startGame = async (op: Operation, diff: Difficulty, table: number | null) => {
     setIsLoading(true);
@@ -57,9 +66,9 @@ export default function App() {
         // Preload Audio
         const promises = [
             audioService.preload(introText),
-            audioService.preload(getQuestionAudioText(q1)),
-            audioService.preload(getQuestionAudioText(q2)),
-            audioService.preload(getQuestionAudioText(q3))
+            loadAudioForQuestion(q1),
+            loadAudioForQuestion(q2),
+            loadAudioForQuestion(q3)
         ];
 
         await Promise.all(promises);
@@ -92,7 +101,7 @@ export default function App() {
               gameState.selectedTable
           );
           questionBuffer.current.push(futureQ);
-          audioService.preload(getQuestionAudioText(futureQ)).catch(e => console.warn("Bg preload fail", e));
+          loadAudioForQuestion(futureQ).catch(e => console.warn("Bg preload fail", e));
       }
   };
 
@@ -122,11 +131,23 @@ export default function App() {
                 gameState.selectedTable
             );
             setCurrentQuestion(fallbackQ);
-            audioService.preload(getQuestionAudioText(fallbackQ)); 
+            loadAudioForQuestion(fallbackQ); 
         }
       }
     } else {
-      setGameState(prev => ({ ...prev, status: 'lost' }));
+      // Check if any lifelines are still available
+      const hasLifelines = gameState.lifelines.fiftyFifty || 
+                          gameState.lifelines.askAudience || 
+                          gameState.lifelines.callFriend;
+      
+      if (hasLifelines) {
+        // Don't end game, just show wrong answer feedback
+        // The GameScreen will handle showing the error and allowing retry
+        return;
+      } else {
+        // All lifelines used, end the game
+        setGameState(prev => ({ ...prev, status: 'lost' }));
+      }
     }
   };
 
@@ -159,9 +180,13 @@ export default function App() {
               <p className="text-xl font-bold text-white mb-2">{loadingMessage}</p>
           </div>
       )}
+      
+      {showGenerator && (
+          <AudioGenerator onClose={() => setShowGenerator(false)} />
+      )}
 
-      {gameState.status === 'start' && !isLoading && (
-        <StartScreen onStart={startGame} />
+      {gameState.status === 'start' && !isLoading && !showGenerator && (
+        <StartScreen onStart={startGame} onOpenGenerator={() => setShowGenerator(true)} />
       )}
 
       {gameState.status === 'playing' && currentQuestion && !isLoading && (
@@ -171,6 +196,7 @@ export default function App() {
           onAnswer={handleAnswer}
           onUseLifeline={useLifeline}
           onCorrectAnswer={prepareNextBuffer}
+          onBackToHome={restartGame}
         />
       )}
 

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { GameState, Question, LEVELS } from '../types';
 import { audioService } from '../services/audioService';
-import { getQuestionAudioText } from '../services/mathEngine';
-import { Users, Phone, Star, User, XCircle } from 'lucide-react';
+import { getQuestionAudioText, getQuestionFileName, getInteractiveExplanation } from '../services/mathEngine';
+import { Users, Phone, Star, User, XCircle, Home, HelpCircle, BookOpen } from 'lucide-react';
 
 interface Props {
   gameState: GameState;
@@ -10,6 +10,7 @@ interface Props {
   onAnswer: (ans: number) => void;
   onUseLifeline: (type: 'fiftyFifty' | 'askAudience' | 'callFriend') => void;
   onCorrectAnswer?: () => void; // Trigger for background loading
+  onBackToHome: () => void; // Back to home page
 }
 
 interface LifelineModalProps {
@@ -17,6 +18,106 @@ interface LifelineModalProps {
   data: any;
   onClose: () => void;
 }
+
+interface HelpModalProps {
+    question: Question;
+    onClose: () => void;
+}
+
+const HelpModal: React.FC<HelpModalProps> = ({ question, onClose }) => {
+    const explanation = getInteractiveExplanation(question);
+    const [currentStep, setCurrentStep] = useState(0);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/70 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+            <div className="bg-gradient-to-b from-indigo-900 to-indigo-950 border-4 border-yellow-500 rounded-3xl p-4 md:p-6 max-w-2xl w-full max-h-[95vh] shadow-2xl relative flex flex-col my-4">
+                <button onClick={onClose} className="absolute top-2 left-2 md:top-4 md:left-4 text-indigo-300 hover:text-white z-10 flex-shrink-0">
+                    <XCircle size={28} className="md:w-8 md:h-8" />
+                </button>
+                
+                {/* Scrollable Content */}
+                <div className="overflow-y-auto flex-1 pr-2 -mr-2" style={{ maxHeight: 'calc(95vh - 120px)' }}>
+                    <div className="text-center mb-4 md:mb-6">
+                        <div className="inline-flex items-center justify-center w-16 h-16 md:w-20 md:h-20 bg-yellow-400 rounded-full mb-3 md:mb-4 animate-bounce">
+                            <BookOpen className="text-indigo-900 w-8 h-8 md:w-10 md:h-10" />
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-black text-yellow-400 mb-2">{explanation.title}</h3>
+                        <p className="text-indigo-200 text-sm md:text-lg px-2">{explanation.explanation}</p>
+                    </div>
+
+                    {/* Visual Example */}
+                    <div className="bg-indigo-800/50 rounded-2xl p-3 md:p-4 mb-4 md:mb-6 border-2 border-yellow-500/30">
+                        <h4 className="text-yellow-300 font-bold text-lg md:text-xl mb-3 md:mb-4 text-center">مثال بصري 🎨</h4>
+                        <div className="space-y-2 md:space-y-3">
+                            {explanation.visualExample.map((line, idx) => (
+                                <div 
+                                    key={idx}
+                                    className="text-center text-lg md:text-xl lg:text-2xl p-2 md:p-3 bg-indigo-900/50 rounded-xl animate-fadeIn break-words overflow-x-auto"
+                                    style={{ animationDelay: `${idx * 0.2}s` }}
+                                >
+                                    {line}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Interactive Steps */}
+                    <div className="bg-indigo-800/30 rounded-2xl p-3 md:p-4 mb-4 md:mb-6">
+                        <h4 className="text-yellow-300 font-bold text-base md:text-lg mb-3 text-center">الخطوات 📝</h4>
+                        <div className="space-y-2 md:space-y-3">
+                            {explanation.steps.map((step, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`flex items-start gap-2 md:gap-3 p-2 md:p-3 rounded-xl transition-all ${
+                                        idx <= currentStep 
+                                            ? 'bg-yellow-400/20 border-2 border-yellow-400' 
+                                            : 'bg-indigo-900/30 border-2 border-transparent'
+                                    }`}
+                                >
+                                    <div className={`flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center font-black text-sm md:text-base ${
+                                        idx <= currentStep 
+                                            ? 'bg-yellow-400 text-indigo-900' 
+                                            : 'bg-indigo-700 text-indigo-300'
+                                    }`}>
+                                        {idx + 1}
+                                    </div>
+                                    <p className={`flex-1 text-right text-sm md:text-base ${
+                                        idx <= currentStep ? 'text-white font-bold' : 'text-indigo-300'
+                                    }`}>
+                                        {step}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setCurrentStep(prev => Math.min(prev + 1, explanation.steps.length - 1))}
+                            disabled={currentStep >= explanation.steps.length - 1}
+                            className="w-full mt-3 md:mt-4 bg-yellow-400 hover:bg-yellow-300 disabled:bg-gray-600 disabled:cursor-not-allowed text-indigo-900 font-bold py-2 rounded-xl transition-all text-sm md:text-base"
+                        >
+                            {currentStep >= explanation.steps.length - 1 ? '✓ انتهينا!' : 'التالي →'}
+                        </button>
+                    </div>
+
+                    {/* Answer Preview */}
+                    <div className="bg-gradient-to-r from-green-600 to-green-500 rounded-xl p-3 md:p-4 text-center border-2 border-green-300 mb-4">
+                        <p className="text-white font-bold text-xs md:text-sm mb-2">الإجابة الصحيحة:</p>
+                        <div className="text-2xl md:text-3xl lg:text-4xl font-black text-white dir-ltr font-mono break-all">
+                            {question.text.replace('؟', question.correctAnswer.toString())}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Fixed Bottom Button */}
+                <button
+                    onClick={onClose}
+                    className="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-bold py-2 md:py-3 rounded-xl transition-colors text-sm md:text-base flex-shrink-0 mt-2"
+                >
+                    فهمت! شكراً لك 🎉
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const LifelineModal: React.FC<LifelineModalProps> = ({ type, data, onClose }) => {
     return (
@@ -32,17 +133,59 @@ const LifelineModal: React.FC<LifelineModalProps> = ({ type, data, onClose }) =>
                 </h3>
 
                 {type === 'audience' && (
-                    <div className="flex justify-around items-end h-64 gap-4 px-2">
-                        {data.map((item: any, idx: number) => (
-                            <div key={idx} className="flex flex-col items-center w-full group">
-                                <div className="text-white font-bold mb-1 text-sm">{item.percentage}%</div>
-                                <div 
-                                    className="w-full bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg transition-all duration-1000 ease-out shadow-lg group-hover:from-blue-500 group-hover:to-blue-300"
-                                    style={{ height: `${item.percentage}%` }}
-                                ></div>
-                                <div className="text-yellow-400 font-bold mt-2 text-xl">{item.label}</div>
-                            </div>
-                        ))}
+                    <div className="space-y-4">
+                        <div className="text-center mb-4">
+                            <p className="text-indigo-200 text-sm">الجمهور يفكر...</p>
+                        </div>
+                        <div className="flex justify-around items-end h-64 gap-3 px-2">
+                            {data.map((item: any, idx: number) => (
+                                <div key={idx} className="flex flex-col items-center w-full group relative">
+                                    {/* Percentage Label at Top */}
+                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-indigo-800 px-3 py-1 rounded-full border-2 border-yellow-400 shadow-lg">
+                                        <span className="text-yellow-300 font-black text-lg">{item.percentage}%</span>
+                                    </div>
+                                    
+                                    {/* Bar Container */}
+                                    <div className="w-full h-full flex flex-col justify-end relative">
+                                        {/* Animated Bar */}
+                                        <div 
+                                            className="w-full bg-gradient-to-t from-blue-600 via-blue-500 to-blue-400 rounded-t-xl transition-all duration-1500 ease-out shadow-lg group-hover:from-blue-500 group-hover:via-blue-400 group-hover:to-blue-300 relative overflow-hidden"
+                                            style={{ height: `${item.percentage}%` }}
+                                        >
+                                            {/* Shine effect on bar */}
+                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"></div>
+                                            
+                                            {/* Value inside bar if large enough */}
+                                            {item.percentage > 20 && (
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <span className="text-white font-black text-2xl drop-shadow-lg">{item.ans}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Grid lines for reference */}
+                                        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{
+                                            backgroundImage: 'repeating-linear-gradient(to top, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 20px)'
+                                        }}></div>
+                                    </div>
+                                    
+                                    {/* Option Label at Bottom */}
+                                    <div className="mt-3 bg-indigo-800 px-4 py-2 rounded-lg border-2 border-indigo-600 group-hover:border-yellow-400 transition-colors">
+                                        <div className="text-yellow-400 font-black text-2xl mb-1">{item.label}</div>
+                                        {item.percentage < 20 && (
+                                            <div className="text-white font-bold text-sm">{item.ans}</div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {/* Summary Text */}
+                        <div className="bg-indigo-950/50 rounded-xl p-3 text-center border border-indigo-700">
+                            <p className="text-indigo-300 text-sm">
+                                هذا رأي الجمهور بناءً على تحليل السؤال
+                            </p>
+                        </div>
                     </div>
                 )}
 
@@ -140,13 +283,16 @@ const CelebrationOverlay = ({ stickerIndex }: { stickerIndex: number | null }) =
     </div>
 );
 
-const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifeline, onCorrectAnswer }) => {
+const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifeline, onCorrectAnswer, onBackToHome }) => {
   const [selectedAns, setSelectedAns] = useState<number | null>(null);
   const [answerStatus, setAnswerStatus] = useState<'correct' | 'wrong' | null>(null);
   const [hiddenAnswers, setHiddenAnswers] = useState<number[]>([]);
   const [showCelebration, setShowCelebration] = useState(false);
   const [activeLifelineModal, setActiveLifelineModal] = useState<{type: 'audience' | 'friend', data: any} | null>(null);
   const [stickerIndex, setStickerIndex] = useState<number | null>(null);
+  const [showWrongMessage, setShowWrongMessage] = useState(false);
+  const [isAudienceThinking, setIsAudienceThinking] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   // Initialize music and question reading
   useEffect(() => {
@@ -156,6 +302,7 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     setShowCelebration(false);
     setStickerIndex(null);
     setActiveLifelineModal(null);
+    setShowWrongMessage(false);
     
     // Stop any previous music and start suspense loop
     audioService.startSuspenseMusic();
@@ -163,7 +310,8 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
     // REDUCED DELAY: from 1000ms to 300ms because we are preloading audio now
     const timer = setTimeout(() => {
         const qText = getQuestionAudioText(question);
-        audioService.speak(qText);
+        const filename = getQuestionFileName(question);
+        audioService.speak(qText, 'ar-SA', filename);
     }, 300);
     
     return () => {
@@ -195,9 +343,27 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
       setAnswerStatus('wrong');
       audioService.playWrongSound();
       audioService.encourageAlwaleed(false);
-      setTimeout(() => {
-        onAnswer(ans);
-      }, 3000);
+      
+      // Check if lifelines are available
+      const hasLifelines = gameState.lifelines.fiftyFifty || 
+                          gameState.lifelines.askAudience || 
+                          gameState.lifelines.callFriend;
+      
+      if (hasLifelines) {
+        // Show message and allow retry after delay
+        setShowWrongMessage(true);
+        setTimeout(() => {
+          setSelectedAns(null);
+          setAnswerStatus(null);
+          setShowWrongMessage(false);
+          audioService.startSuspenseMusic();
+        }, 3000);
+      } else {
+        // No lifelines left, end game
+        setTimeout(() => {
+          onAnswer(ans);
+        }, 3000);
+      }
     }
   };
 
@@ -211,8 +377,10 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
 
   const handleAskAudience = () => {
       onUseLifeline('askAudience');
-      audioService.playDing();
+      setIsAudienceThinking(true);
+      audioService.playAudienceThinking();
       
+      // Generate data
       const data = question.answers.map((ans, idx) => {
           let percentage = 0;
           if (ans === question.correctAnswer) {
@@ -226,14 +394,22 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
       const total = data.reduce((acc, curr) => acc + curr.percentage, 0);
       data.forEach(d => d.percentage = Math.floor((d.percentage / total) * 100));
       
-      setActiveLifelineModal({ type: 'audience', data });
+      // Show modal after thinking sound (about 2 seconds)
+      setTimeout(() => {
+          setIsAudienceThinking(false);
+          setActiveLifelineModal({ type: 'audience', data });
+      }, 2000);
   };
 
   const handleCallFriend = () => {
       onUseLifeline('callFriend');
-      audioService.playDing();
-      const friendAns = Math.random() > 0.1 ? question.correctAnswer : question.answers.find(a => a !== question.correctAnswer);
-      setActiveLifelineModal({ type: 'friend', data: { answer: friendAns }});
+      audioService.playPhoneRing();
+      
+      // Show modal after phone ring completes (about 2 seconds)
+      setTimeout(() => {
+          const friendAns = Math.random() > 0.1 ? question.correctAnswer : question.answers.find(a => a !== question.correctAnswer);
+          setActiveLifelineModal({ type: 'friend', data: { answer: friendAns }});
+      }, 2000);
   };
 
   return (
@@ -241,6 +417,29 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
       
       {showCelebration && <CelebrationOverlay stickerIndex={stickerIndex} />}
       
+      {/* Audience Thinking Overlay */}
+      {isAudienceThinking && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-indigo-900 border-4 border-yellow-500 rounded-3xl p-8 text-center shadow-2xl">
+                  <Users className="w-16 h-16 text-yellow-400 mx-auto mb-4 animate-pulse" />
+                  <h3 className="text-2xl font-bold text-white mb-2">الجمهور يفكر...</h3>
+                  <p className="text-indigo-200">يرجى الانتظار قليلاً</p>
+                  <div className="mt-4 flex justify-center gap-2">
+                      <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                      <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                      <div className="w-3 h-3 bg-yellow-400 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showHelpModal && (
+          <HelpModal 
+            question={question}
+            onClose={() => setShowHelpModal(false)} 
+          />
+      )}
+
       {activeLifelineModal && (
           <LifelineModal 
             type={activeLifelineModal.type} 
@@ -251,6 +450,40 @@ const GameScreen: React.FC<Props> = ({ gameState, question, onAnswer, onUseLifel
 
       {/* Main Game Area */}
       <div className="flex-1 flex flex-col justify-center items-center order-2 md:order-1 relative z-10">
+        
+        {/* Help Button */}
+        <button
+          onClick={() => {
+            setShowHelpModal(true);
+            audioService.playDing();
+          }}
+          className="absolute top-4 left-4 md:top-6 md:left-6 bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-full border-2 border-purple-400 shadow-lg transition-all transform hover:scale-110 active:scale-95 z-50 flex items-center gap-2"
+          title="مساعدة في حل السؤال"
+        >
+          <HelpCircle size={20} />
+          <span className="hidden md:inline font-bold">مساعدة</span>
+        </button>
+
+        {/* Back to Home Button */}
+        <button
+          onClick={onBackToHome}
+          className="absolute top-4 right-4 md:top-6 md:right-6 bg-indigo-800 hover:bg-indigo-700 text-white p-3 rounded-full border-2 border-yellow-400 shadow-lg transition-all transform hover:scale-110 active:scale-95 z-50 flex items-center gap-2"
+          title="العودة للصفحة الرئيسية"
+        >
+          <Home size={20} />
+          <span className="hidden md:inline font-bold">الرئيسية</span>
+        </button>
+
+        {/* Wrong Answer Message */}
+        {showWrongMessage && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-red-900 border-4 border-red-500 rounded-3xl p-6 max-w-md text-center shadow-2xl">
+              <h3 className="text-2xl font-bold text-white mb-4">❌ إجابة خاطئة</h3>
+              <p className="text-red-200 mb-2">لا يزال لديك وسائل مساعدة متاحة!</p>
+              <p className="text-yellow-300 font-bold">استخدمها أو حاول مرة أخرى</p>
+            </div>
+          </div>
+        )}
         
         {/* Lifelines Bar */}
         <div className="flex gap-4 mb-6">
